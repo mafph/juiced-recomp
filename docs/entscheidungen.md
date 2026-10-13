@@ -86,3 +86,17 @@ Kurzformat: **Kontext → Entscheidung → Begründung → Alternativen.**
 - **Entscheidung:** `logs/` wird per `reproduce` erzeugt und **nicht** committet
   (nur `logs/.gitkeep`). Die inhaltlichen Ergebnisse stehen in `docs/reproduktion.md`.
 - **Begründung:** Logs sind reproduzierbar und teils groß; Doku bleibt die Quelle der Wahrheit.
+
+## E10 — pcrecomp-`difftest`-x87-Fehler sind ein GCC-Link-Artefakt
+
+- **Kontext:** difftest meldete 273/368 mit 95 x87-Fehlern (geliftete GPRs = 0), obwohl
+  der Lift selbst fehlerfrei ist.
+- **Befund:** Im GCC-Pfad legt der Linker das im Header **weak** definierte, null-initialisierte
+  Schattenarray `g_st_i64[8]` (`RECOMP_SHARED_DATA`) überlappend auf die Registerglobals; jeder
+  `fp_push`/`fp_pop` überschreibt dadurch `eax/ecx/edx/esp/ebx`.
+- **Entscheidung:** Als **Umgebungsartefakt** dokumentieren. Der pcrecomp-Klon bleibt unverändert
+  (kein dauerhafter Patch), bis ein 32-Bit-/MSVC-Pfad feststeht. Ohne `weak` (Test) sind 368/368
+  grün — nachgewiesen.
+- **Begründung:** MSVC nutzt `__declspec(selectany)`; die Kollision ist GCC-spezifisch und für
+  den späteren MinGW-Build relevant, aber kein Lift- und kein Juiced-Problem.
+

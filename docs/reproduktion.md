@@ -153,10 +153,34 @@ Ziel: Müll aus `.securom` und der Nullsektion entfernen, Sektionen als Daten ma
 
 ### 3.1–3.3 Runtime + CMake-Build
 
-- **Tatsächlich:** *(folgt)*
+- **Erwartet:** 32-Bit-Host-Compiler + CMake/Ninja zum Bau der Runtime `recomp32`/`native32`
+  mit dem gelifteten C (772,7 MB) als PoC.
+- **Tatsächlich:** **blockiert.** Auf dem System vorhanden ist als einziger Compiler
+  `C:\msys64\ucrt64\bin\gcc.exe` (gcc 15.2.0, Target `x86_64-w64-mingw32`, **64-Bit**) sowie
+  `C:\msys64\usr\bin\make.exe`. Ein 32-Bit-Build benötigt zusätzlich `mingw-w64-i686-gcc`
+  (MSYS2) **und** CMake; beides fehlt (kein `cl`/`clang`/`cc`/`cmake`/`ninja`/`nmake`/`msbuild`
+  auf PATH, VS2022 ohne C++-Workload, WSL ohne installierte Distro).
+- **Konsequenz:** Der eigentliche Spiel-Build ist bis zur Klärung der Toolchain nicht möglich.
 
 ### 3.4 PoC (difftest)
 
-- **Befehl:** `python tools/lift/difftest.py Juiced.exe --function 0x401000`
-- **Log:** `logs/difftest.log`
-- **Tatsächlich:** *(folgt)*
+- **Befehl:** `python pcrecomp\tools\lift\difftest.py` (venv-Python, `PATH` inkl.
+  `C:\msys64\ucrt64\bin`; Host-Compiler ist das 64-Bit-gcc, `RECOMP_CC` optional)
+- **Log:** `logs/difftest.log` (Basislauf), `logs/difftest_weakfix.log` (mit Fix)
+- **Erwartet:** Alle Instruktions-PoC-Fälle stimmen mit Unicorn/Hardware überein.
+- **Tatsächlich (Basislauf):** **273/368** stimmen, **0 known divergences, 95 failures** —
+  **alle im x87/FPU-Bereich**. Die 95 Fälle zeigen geliftete GPR-Werte = 0.
+- **Ursache (ermittelt, kein Lift-Fehler):** Im GCC-/MinGW-Pfad legt der Linker das im Header
+  **weak** (`RECOMP_SHARED_DATA = __attribute__((weak))`) definierte, null-initialisierte
+  Schattenarray `g_st_i64[8]` **überlappend** auf den Registerblock. Im Basis-Binary sind
+  `g_eax/g_ecx/g_edx/g_esp/g_ebx` (`0x…80AC`–`0x…80BC`) in `g_st_i64` (`0x…8080`–`0x…80BF`)
+  eingebettet; `g_esi/g_edi/g_ebp` liegen knapp dahinter und überleben. Jeder `fp_push`/`fp_pop`
+  überschreibt damit die GPRs — in x87-Fällen sichtbar, weil sonst niemand diese Register liest.
+- **Verifikation:** `RECOMP_SHARED_DATA` testweise ohne `weak` (Header, `g_st_i64` wandert nach
+  `0x…8060`, kein Overlap) ⇒ **368/368, 0 Fehler.** Damit ist die Ursache konklusiv.
+- **Einordnung:** Umgebungs-/Toolchain-Artefakt des GCC-Pfads (MSVC nutzt `__declspec(selectany)`).
+  Relevant für einen späteren MinGW-Build des gelifteten Codes (FPU-lastige Funktionen).
+- **Abweichung:** Der in Phase 2 notierte „difftest gegen eine Juiced-Funktion"-Aufruf war nicht
+  korrekt — `difftest.py` nimmt **kein** Exe-/Funktions-Argument, sondern prüft eine feste
+  Instruktions-Corpus (368 Fälle). Es ist damit ein **Lifter**-PoC, kein Juiced-Funktions-PoC.
+
