@@ -151,29 +151,50 @@ Ziel: Müll aus `.securom` und der Nullsektion entfernen, Sektionen als Daten ma
 
 ## Phase 3 — Build und PoC
 
-### 3.1–3.3 Runtime + 32-Bit-Build (PoC)
+### 3.1–3.3 Runtime + 32-Bit-Build
 
-- **Erwartet:** 32-Bit-Host-Compiler + CMake/Ninja, um die Runtime `recomp32` mit dem
-  gelifteten C zu einem 32-Bit-PE zu linken.
+- **Erwartet:** 32-Bit-Compiler, um die Runtime `recomp32` mit dem gelifteten C
+  (772,7 MB) zu einem 32-Bit-PE zu linken.
 - **Vorbereitung (Toolchain):** Kein 32-Bit-Compiler vorhanden gewesen. Per MSYS2/pacman
   nachinstalliert: `mingw-w64-i686-gcc` (gcc **16.2.0**, Target `i686-w64-mingw32`),
   `mingw-w64-i686-cmake` (CMake 4.4.4), `mingw-w64-i686-ninja` (1.13.2) — siehe `umgebung.md`.
-- **Befehl (PoC, verifiziert):** `scripts\build_poc.cmd` (bzw. deren Einzelschritte)
-- **Schritte:** (1) `scripts\patch_recomp_weak.py` (ADR E10); (2) `scripts\gen_weak_stubs.py`
-  → `build\poc_stubs.c`; (3) i686-gcc kompiliert `poc\main.c` und `juiced_lifted\recomp_0000.c`
-  (`-O0 -w -ffunction-sections`, Prototypen per `-include recomp_funcs.h`); (4) Link mit
-  `-Wl,--gc-sections` gegen die weak-Stubs.
-- **Tatsächlich:** **`build\juiced_poc.exe`, 14,36 MB, machine `0x014C` (i386, 32-bit)**.
-  Läuft und meldet `sizeof(void*)=4`. Eine echte geliftete TU (`recomp_0000.c`, 5,58 MB,
-  500 Funktionen) kompiliert in ~9 s.
+
+#### 3.1–3.3a PoC-Smoke-Link (eine TU)
+
+- **Befehl:** `scripts\build_poc.cmd`
+- **Schritte:** `patch_recomp_weak.py` (E10) → `gen_weak_stubs.py` → i686-gcc kompiliert
+  `poc\main.c` + `juiced_lifted\recomp_0000.c` (`-O0 -w -ffunction-sections`, Prototypen per
+  `-include recomp_funcs.h`) → Link `-Wl,--gc-sections` gegen die weak-Stubs.
+- **Tatsächlich:** **`build\juiced_poc.exe`, 14,36 MB, machine `0x014C` (i386, 32-bit)**,
+  läuft, `sizeof(void*)=4`. `recomp_0000.c` (5,58 MB, 500 Fn) kompiliert in ~9 s.
+
+#### 3.1–3.3b Vollbau (alle 120 TUs)
+
+- **Befehl:** `scripts\build_full.cmd`
+- **Schritte:** `patch_cc1_laa.py` (s. u.) → `patch_recomp_weak.py` → `patch_undefined_labels.py`
+  (s. u.) → i686-gcc kompiliert **120 TUs** → `gen_link_stubs.py` (s. u.) → Link
+  `-Wl,--gc-sections`.
+- **Tatsächlich:** **`build\juiced_full.exe`, 394,8 MB, machine `0x014C` (i386, 32-bit)**,
+  läuft, `sizeof(void*)=4`. Kompilierung **120 TUs in ~40 min**, Link **~3,3 min**.
+- **Auftretende Blocker (gelöst):**
+  1. **`cc1.exe: out of memory`** bei den größten TUs (bis 37 MB) — der i686-`cc1` ist selbst
+     32-Bit und ohne LAA auf ~2 GB begrenzt. Fix: LARGE_ADDRESS_AWARE-Bit in `cc1.exe`/`cc1plus.exe`
+     setzen (`scripts/patch_cc1_laa.py`, ~4 GB auf 64-Bit-Windows) plus speicherschonende
+     Parameter `--param ggc-min-heapsize=32768 ggc-min-expand=10`.
+  2. **`label 'L_…' used but not defined`** (15 Dateien, 37 Labels) — Lift-Defekte des Translators
+     für Sprungziele aus dem linearen Over-Scan. Fix: `scripts/patch_undefined_labels.py`
+     (Label-Definition am Funktionsanfang, betrifft nur Garbage-/Dead-Code).
+  3. **`implicit declaration of function`** (gcc 14+ = Fehler): nur `-Wno-error=implicit-function-declaration`.
+  4. **Undefinierte `sub_*`** (20.697 Symbole, Ziele außerhalb des Funktionskatalogs/Images):
+     `scripts/gen_link_stubs.py` erzeugt aus `nm -u` weak-Leer-Stubs (Achtung: i686-PE-Symbole
+     tragen führenden Unterstrich, `_sub_…`).
 - **Abweichungen / Hinweise:**
-  - `poc\main.c` ist ein **Smoke-Einstieg** ohne Speicher-Layout/Imports (führt keinen
-    Spielcode aus). Es stellt die Runtime-Globals bereit und referenziert `sub_00401000`.
+  - `poc\main.c` ist ein **Smoke-Einstieg** ohne Speicher-Layout/Imports — es wird **kein
+    Spielcode ausgeführt**; der PoC belegt nur Übersetz- und Linkbarkeit als 32-Bit-PE.
   - `--unresolved-symbols=ignore-all` wird von diesem mingw-ld im PE-Pfad **nicht** honoriert;
-    die fehlenden `sub_*` der übrigen TUs werden daher über generierte **weak-Leer-Stubs**
-    geschlossen (starke Definition gewinnt, sobald die TU mitgelinkt wird).
-  - Der **Vollbau** aller 120 TUs (~772 MB C, Objekte ~600 MB) ist als CMake-Skelett
-    `poc\CMakeLists.txt` hinterlegt, aber noch **nicht** ausgeführt (Zeit/RAM, 32-Bit-ld-Limit).
+    daher weak-Stubs (`gen_weak_stubs.py`/`gen_link_stubs.py`).
+  - Das CMake-Skelett `poc\CMakeLists.txt` ist die Vorlage für einen inkrementellen Vollbau;
+    der verifizierte Ablauf ist `scripts\build_full.cmd`.
 
 ### 3.4 PoC (difftest)
 

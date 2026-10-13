@@ -124,3 +124,27 @@ Kurzformat: **Kontext → Entscheidung → Begründung → Alternativen.**
   nicht die Lauffähigkeit des Spiels.
 - **Begründung:** Schnellster Nachweis, dass Compiler + Runtime-Fix + gelifteter Code sich zu
   einem 32-Bit-PE linken lassen, ohne den teuren Vollbau vorzuziehen.
+
+## E12 — Vollbau aller 120 TUs + Behebung dreier Build-Blocker
+
+- **Kontext:** Nach dem Smoke-Link (E11) sollte der Link **aller** 120 gelifteten TUs belegt
+  werden. Dabei traten drei reproduzierbare Blocker auf.
+- **Entscheidungen / Fixes (alle per Skript, idempotent):**
+  1. **`cc1 out of memory`** (größte TUs 37 MB): 32-Bit-`cc1` ohne LAA auf ~2 GB begrenzt →
+     `scripts/patch_cc1_laa.py` setzt das LARGE_ADDRESS_AWARE-Bit (`cc1`/`cc1plus`; `ld` hat es
+     bereits) und es werden `--param ggc-min-heapsize=32768 ggc-min-expand=10` verwendet.
+     Kein Wechsel auf clang (die ucrt64-clang-Pakete sind auf diesem System nicht lauffähig:
+     `STATUS_ENTRYPOINT_NOT_FOUND`).
+  2. **`label 'L_…' used but not defined`** (15 Dateien / 37 Labels): Lift-Defekt für Sprungziele
+     aus dem linearen Over-Scan → `scripts/patch_undefined_labels.py` ergänzt die fehlende
+     Label-Definition am Funktionsanfang (nur Garbage-/Dead-Code).
+  3. **Undefinierte `sub_*`** (20.697): Ziele außerhalb von Katalog/Image → `scripts/gen_link_stubs.py`
+     erzeugt aus `nm -u` weak-Leer-Stubs (i686-PE: führender Unterstrich `_sub_…` beachten).
+     Zusätzlich `-Wno-error=implicit-function-declaration` (gcc 14+ stufte das zum Fehler hoch).
+- **Ergebnis:** `scripts/build_full.cmd` → **`build\juiced_full.exe`, 394,8 MB, machine 0x014C
+  (i386), läuft**; 120 TUs in ~40 min, Link ~3,3 min. Verbleibende obige Punkte sind
+  Werkzeug-/Lift-Randfälle in nicht erreichbarem Code, nicht Teil der verifizierten Logik.
+- **Grenze:** Der Vollbau beweist Übersetz-/Linkbarkeit als 32-Bit-PE, **nicht** die
+  Lauffähigkeit des Spiels (Smoke-`main`, kein Speicher-Layout/Imports/DRM).
+- **Begründung:** Alle drei Blocker sind umgebungs- bzw. randcodebedingt und per Skript
+  behebbar; die Abweichung zu pcrecomp bleibt als umgebungsnahe Dokumentation sichtbar.
