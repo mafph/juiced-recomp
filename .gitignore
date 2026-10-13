@@ -18,6 +18,11 @@ src/recomp/
 pcrecomp/
 nfsu2-recompiled/
 
+# --- pcrecomp Zwischenergebnisse (regenerierbar) ---
+juiced_pe.json
+juiced_functions.json
+juiced.disasm
+
 # --- Logs ---
 *.log
 

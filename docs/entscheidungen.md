@@ -26,8 +26,10 @@ Kurzformat: **Kontext → Entscheidung → Begründung → Alternativen.**
   sind 17 MB Nullen (Entropie ~0.74).
 - **Entscheidung:** Beide nicht liften; in Ghidra als Daten markieren.
 - **Begründung:** Kein Spielcode; Liften produziert nur Müll.
-- **Wirksam bei pcrecomp:** automatisch, weil `disasm32` rekursiv vom Entry/Exports läuft
-  und diese Bereiche nicht erreicht.
+- **Wirksam bei pcrecomp:** **nicht** automatisch. `disasm32` scannt jede Sektion mit
+  `characteristics & 0x20000020` linear als Code — `.securom` (CODE) und `.data2` (EXEC)
+  werden also mitgescannt. Die Begrenzung erfolgt über einen PE-Flag-Patch (siehe E9),
+  nicht über die rekursive Erreichbarkeit.
 
 ## E4 — `.data2` (Sektion Nr. 8) NICHT blind löschen
 
@@ -40,10 +42,27 @@ Kurzformat: **Kontext → Entscheidung → Begründung → Alternativen.**
 ## E5 — Ghidra-Bereinigung ist nur Referenz, nicht pcrecomp-Input
 
 - **Kontext:** Der Auftrag nennt „Phase 1: Ghidra bereinigen" vor dem Lift.
-- **Entscheidung:** Sauberer C-Export bleibt Referenz; pcrecomp bekommt die **unveränderte**
-  EXE.
+- **Entscheidung:** Sauberer C-Export bleibt Referenz; pcrecomp bekommt **nicht** das
+  Ghidra-Projekt, sondern eine **Kopie der EXE mit gepatchten Section-Flags** (E9).
 - **Begründung:** pcrecomp disassembliert die EXE selbst; das Ghidra-Projekt beeinflusst
-  den Lift nicht.
+  den Lift nicht. Eine reine Flag-Änderung an der Sektionskopie ist der minimale,
+  pcrecomp-eigene Mechanismus, um Nicht-Code-Bereiche auszuschließen.
+
+## E9 — Nicht-Code-Sektionen per PE-Flag-Patch ausschließen
+
+- **Kontext:** `disasm32` (pcrecomp) verwendet `is_code = characteristics & 0x20000020`.
+  `.securom` trägt `CODE|EXEC`, `.data2` `IDATA|EXEC`. Beide werden dadurch als Code
+  linear gescannt; in `.data2` entstehen Pseudo-Funktionen, die den Lauf zum Erliegen
+  bringen (11,9 GB RAM, kein Fortschritt).
+- **Entscheidung:** `scripts/patch_sections.py` erzeugt `build/Juiced.pcrecomp.exe` und
+  löscht in den Section-Headern die Flags `CNT_CODE (0x20)` und `MEM_EXECUTE (0x20000000)`
+  für `.securom` und `.data`. Bytes, Größen, Adressen bleiben unverändert.
+- **Begründung:** Minimal-invasiv; pcrecomp überspringt die Bereiche dann sauber. Der
+  Original-`Juiced.exe` bleibt unangetastet.
+- **Alternativen verworfen:** `disasm32`-Code patchen (Fork, Upstream-Drift); Scan-Span
+  per Hand verkleinern (keine CLI-Option, `.SCY` am Ende spannt ohnehin weit);
+  `.data2` mitliften (RAM-Explosion). Echter Code in `.data2` kann später gezielt per
+  `--seed-functions` nachgezogen werden.
 
 ## E6 — Runtime `native32`
 

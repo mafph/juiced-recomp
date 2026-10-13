@@ -93,29 +93,59 @@ Ziel: Müll aus `.securom` und der Nullsektion entfernen, Sektionen als Daten ma
 
 ### 2.1 pcrecomp beschaffen
 
-- **Befehl:** `git clone https://github.com/sp00nznet/pcrecomp` + `pip install -r requirements.txt`
-- **Erwartet:** Clone + Abhängigkeiten vorhanden.
-- **Tatsächlich:** *(folgt)*
-- **Abweichung:** —
+- **Befehl:** `git clone <pcrecomp>` + Deps in `.venv` installieren.
+- **Log:** `logs/pcrecomp_commit.log`, `logs/pip_freeze.log`
+- **Erwartet:** Clone (Python 3.10+, keine LLVM/CMake-Toolchain) + Abhängigkeiten.
+- **Tatsächlich:** Commit `d1319ed8b7486c7a21622c811b3b41003a93d7c1`; `.venv` mit
+  capstone 5.0.9, pefile 2024.8.26, lief 1.0.0, unicorn 2.1.4, cryptography 50.0.2, cffi 2.1.1.
+- **Abweichung:** Repo hat **keine** `requirements.txt` → Abhängigkeiten explizit installiert.
 
-### 2.2 PE-Analyse
+### 2.2 Sektionen als Daten markieren (PE-Patch)
 
-- **Befehl:** `python tools/pe/pe_analyze.py Juiced.exe --json juiced_pe.json`
+- **Befehl:** `python scripts/patch_sections.py Juiced.exe build\Juiced.pcrecomp.exe .securom .data`
+- **Log:** `logs/patch_sections.log`
+- **Erwartet:** `.securom` und `.data2` sind **kein** Code mehr (kein CODE/EXEC-Flag).
+- **Tatsächlich:** `.securom` 0xE0000020 → 0xC0000000; `.data2` 0xE0000040 → 0xC0000040.
+  Nur die Section-Header-Flags geändert, Bytes/Adressen unverändert.
+- **Abweichung:** **Nötig** — `disasm32` behandelt jede Sektion mit
+  `characteristics & 0x20000020` als Code. `.securom` (CODE) und `.data2` (EXEC) würden
+  sonst als Code linear gescannt. Ohne den Patch lief der vorige Lauf in eine
+  Speicher-Explosion (11,9 GB, kein Fortschritt) durch Pseudo-Funktionen in `.data2`.
+  (Widerspricht der früheren Annahme in E3, pcrecomp überspringe diese Bereiche „automatisch".)
+
+### 2.3 PE-Analyse
+
+- **Befehl:** `python pcrecomp\tools\pe\pe_analyze.py build\Juiced.pcrecomp.exe --json juiced_pe.json`
 - **Log:** `logs/pe_analyze.log`
 - **Erwartet:** JSON mit Sektionen, Imports, Exports.
-- **Tatsächlich:** *(folgt)*
+- **Tatsächlich:** 211 Imports aus 12 DLLs (advapi32, binkw32, d3d9, dinput8, dsound,
+  gdi32, kernel32, ole32, shell32, user32, ws2_32, wsock32); Code-Range 0x00401000–0x02144000.
+- **Abweichung:** —
 
-### 2.3 Disassemblierung
+### 2.4 Disassemblierung
 
-- **Befehl:** `python tools/disasm/disasm32.py Juiced.exe --output juiced.disasm`
+- **Befehl:** `python pcrecomp\tools\disasm\disasm32.py build\Juiced.pcrecomp.exe --output juiced_functions.json --pe-json juiced_pe.json`
 - **Log:** `logs/disasm32.log`
-- **Tatsächlich:** *(folgt)*
+- **Erwartet:** Funktionskatalog JSON.
+- **Tatsächlich:** **59.554 Funktionen** (1.856 Thunks, 35.765 Leafs), 7.264.206
+  Instruktionen, Byte-Abdeckung 5.591.814 / 30.683.136 (18,2 %), Katalog 16.613.190 B.
+  Laufzeit ~19 min, RAM-Spitze 3,7 GB.
+- **Abweichung:** Erster Versuch (ungepatchte EXE) erzeugte 32.960 Kandidaten, lief bei
+  22.000 fest und blähte den RAM auf 11,9 GB → abgebrochen. Nach dem Patch (2.2): 30.852
+  Kandidaten, 3,7 GB, stabiles Ende nach 22 Discovery-Runden. `disasm32` hat **keine**
+  Scan-Bereichs-Option; die Begrenzung erfolgt über die Section-Flags der Input-EXE.
 
-### 2.4 Lift
+### 2.5 Lift
 
-- **Befehl:** `python -m tools Juiced.exe --all --output juiced_lifted/`
+- **Befehl:** *(workdir `pcrecomp`)* `python -m tools ..\build\Juiced.pcrecomp.exe --all --output ..\juiced_lifted --split 500`
 - **Log:** `logs/lift.log`
-- **Tatsächlich:** *(folgt)*
+- **Erwartet:** C-Quelldateien, `recomp_funcs.h`, `recomp_dispatch.c`.
+- **Tatsächlich:** **59.554 Funktionen** in 1204,9 s (~20 min). **120** Quelldateien
+  (`recomp_0000.c`–`recomp_0119.c`, `--split 500`) + `recomp_funcs.h` + `recomp_dispatch.c`,
+  zusammen **772,7 MB** C. **0** Lift-Fehler (keine `/* ERROR ... */`-Zeilen).
+- **Abweichung:** Der `python -m tools --all`-Pfad wiederholt die Discovery in-process
+  (Log gepuffert → Fortschritt erst am Ende). `--functions-json` **exportiert** nur eine
+  Zusammenfassung ohne Instruktionen, ist also **nicht** als Lift-Eingabe verwendbar.
 
 ---
 
