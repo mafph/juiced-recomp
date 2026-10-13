@@ -257,3 +257,38 @@ Ziel: Müll aus `.securom` und der Nullsektion entfernen, Sektionen als Daten ma
   korrekt — `difftest.py` nimmt **kein** Exe-/Funktions-Argument, sondern prüft eine feste
   Instruktions-Corpus (368 Fälle). Es ist damit ein **Lifter**-PoC, kein Juiced-Funktions-PoC.
 
+### 3.5 Ein-Funktions-Difftest gegen echten Juiced-Code
+
+Beweist, dass der Lift **echter Juiced-Funktionen** (nicht nur der Corpus) bit-genau mit dem
+Original-CPU-Verhalten übereinstimmt: geliftete C-Funktion gegen Unicorn, verglichen werden alle
+acht GPRs, die definierten EFLAGS (CF/PF/AF/ZF/SF/DF/OF) und der beschriebene Gast-Speicher.
+
+- **Werkzeuge:** `scripts/find_leaf.py` (katalogisiert geeignete Blätter aus
+  `juiced_functions.json`), `scripts/difftest_fn.py` (Frontend auf die Engine von
+  `pcrecomp\tools\lift\difftest.py`).
+- **Auswahl (`find_leaf.py`):** nur `entry_kind == "start"`, `calls_to` leer, ohne
+  call/jmp/FPU/SSE/String-Ops, ohne absolute Speicheroperanden, alle Sprungziele innerhalb der
+  Funktion. `--interesting` zeigt zusätzlich Funktionen mit Branches/`imul`/`div`.
+- **Ausführung (`difftest_fn.py <VA>`):** Funktion wird im difftest-Gastfenster bei `BASE`
+  (0x400000) emuliert/verglichen. Der abschließende `ret` wird abgeschnitten (Unicorn hält am
+  Funktionsende an; beide Seiten vergleichen **vor** dem Rücksprung), sein Adress-Label bleibt
+  erhalten, damit jcc dorthin als `goto` landen. `lift32` ruft für Sprünge
+  `insn.get_branch_target()` (nur auf `disasm32.Instruction`, nicht auf capstone) — der Script
+  reicht einen Shim nach.
+- **Aufruf-Beispiele** (venv-Python, `PATH` inkl. `C:\msys64\ucrt64\bin`):
+  - `python scripts\difftest_fn.py 0x0049C682 --reg edx=0x12345678`
+  - `python scripts\difftest_fn.py 0x0062D21B --frame 0x412000 --arg 0x411000 --mem 0x411042=1000 --mem 0x4110a4=04030201`
+  - `python scripts\difftest_fn.py 0x00C52BF8 --frame 0x412000 --reg eax=5` (und `eax=7`)
+- **Ergebnis:** alle geprüften Funktionen **OK** (lifted == CPU):
+
+  | VA | Funktion (Kategorie) | Ergebnis |
+  |----|----------------------|----------|
+  | 0x0049C682 | `mov eax,0xa; add eax,edx; ret 4` (nur Register + Flags) | OK |
+  | 0x0062D21B | `movzx`/`imul`/`add [ecx+..]`/`not` (Speicher lesen, stdcall-Frame) | OK |
+  | 0x00C52BF8 | `cmp; jne; mov [ebp-0x18],1; ret` (Branch, beide Pfade) | OK |
+
+- **Grenzen (nächste Stufe):** Funktionen mit absoluten Speicheroperanden brauchen ein echtes
+  Image-Mapping (`.rdata`/`.data` an Original-VAs); Funktionen mit eingebettetem `ret` (früher
+  Rücksprung) werden derzeit abgelehnt (`difftest_fn.py` bricht mit klarer Meldung ab).
+
+

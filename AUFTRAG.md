@@ -145,6 +145,11 @@ python tools/lift/difftest.py Juiced.exe --function 0x401000
 > Argument, sondern prüft einen festen Instruktions-Corpus (368 Fälle) gegen Unicorn
 > (Lifter-PoC). Für einen Juiced-Funktions-PoC braucht es einen eigenen Differenz-Harness
 > (geliftete Blattfunktion vs. Unicorn; Blätter findet `tools/disasm/callgraph.py`).
+>
+> **Umgesetzt (E14, `scripts/difftest_fn.py` + `scripts/find_leaf.py`):** Differenz-Harness
+> steht; echte Juiced-Blätter (Register-only, Speicher-lesend/stdcall, verzweigend) stimmen
+> bit-genau mit Unicorn/Hardware. Details: `docs/reproduktion.md` §3.5, `docs/entscheidungen.md`
+> E14. Offen (nächste Stufe): absolute Speicheroperanden (Image-Mapping) und eingebettete `ret`.
 
 Das bleibt der entscheidende Test: geliftetes C vs. Unicorn für x86-32 – jedes Register, jedes Flag, jedes Byte.
 

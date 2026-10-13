@@ -169,3 +169,25 @@ Kurzformat: **Kontext → Entscheidung → Begründung → Alternativen.**
   (`ninja … build/full/recomp_XXXX.o`).
 - **Offen:** Falls ein funktionierendes 32-Bit-`lld` verfügbar wird, nur die Link-Regel
   (`ld.lld`/`-fuse-ld=lld`) in `gen_build_ninja.py` umstellen → Inkrementell-Ziel erreichbar.
+
+## E14 — Ein-Funktions-Difftest gegen echten Juiced-Code (Phase 3.4)
+
+- **Kontext:** Der pcrecomp-`difftest` prüft nur einen festen Instruktions-Corpus (Lifter-PoC).
+  Der Auftrag verlangt einen PoC an einer **echten** Juiced-Funktion.
+- **Entscheidung:** `scripts/difftest_fn.py` setzt auf die difftest-Engine auf, zieht die
+  Funktionsbytes aber aus `build\Juiced.pcrecomp.exe` (per `juiced_functions.json`) und wählt
+  mit `scripts/find_leaf.py` geeignete Blattfunktionen. Vergleich: geliftetes C vs. Unicorn
+  (acht GPRs, definierte EFLAGS, Gast-Speicher).
+- **Kerndetails:**
+  1. Funktion läuft im difftest-Fenster bei `BASE` (0x400000); Lift-Ausgabe ist rein relativ.
+  2. Das abschließende `ret` wird abgeschnitten, damit Unicorn am Funktionsende hält und beide
+     Seiten **vor** dem Rücksprung vergleichen; sein Adress-Label bleibt stehen, damit jcc
+     dorthin als `goto` landen.
+  3. `lift32` ruft für Sprünge `insn.get_branch_target()` — nur `disasm32.Instruction` hat das.
+     Ein dünner Shim ergänzt die eine Methode auf capstone-Insns; Labels an jeder Adresse
+     (`label_all`, wie `generate.py` bei indirekten Sprüngen) machen interne jcc zu `goto`.
+- **Ergebnis:** Register-only, Speicher-lesende (stdcall-Frame) und verzweigende Blätter
+  stimmen bit-genau (`0x0049C682`, `0x0062D21B`, `0x00C52BF8` in beiden Pfaden).
+- **Grenzen / offen:** Absolute Speicheroperanden brauchen Image-Mapping an Original-VAs;
+  eingebettete `ret` (früher Rücksprung) werden derzeit abgelehnt. Beides ist die nächste
+  Ausbaustufe (echtes Speicher-Layout + Runtime-`main`).
