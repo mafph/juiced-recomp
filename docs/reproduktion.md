@@ -176,8 +176,9 @@ Ziel: Müll aus `.securom` und der Nullsektion entfernen, Sektionen als Daten ma
   `g_eax/g_ecx/g_edx/g_esp/g_ebx` (`0x…80AC`–`0x…80BC`) in `g_st_i64` (`0x…8080`–`0x…80BF`)
   eingebettet; `g_esi/g_edi/g_ebp` liegen knapp dahinter und überleben. Jeder `fp_push`/`fp_pop`
   überschreibt damit die GPRs — in x87-Fällen sichtbar, weil sonst niemand diese Register liest.
-- **Verifikation:** `RECOMP_SHARED_DATA` testweise ohne `weak` (Header, `g_st_i64` wandert nach
-  `0x…8060`, kein Overlap) ⇒ **368/368, 0 Fehler.** Damit ist die Ursache konklusiv.
+- **Verifikation:** `scripts/patch_recomp_weak.py` verschiebt die weak-Definition in eine
+  explizite Sektion (`__attribute__((weak, section(".data")))`); damit **368/368, 0 Fehler**
+  (`logs/difftest_weakfix.log`) und ein Zwei-TU-Link ohne Duplikat-Fehler. Ursache konklusiv.
 - **Einordnung:** Umgebungs-/Toolchain-Artefakt des GCC-Pfads (MSVC nutzt `__declspec(selectany)`).
   Relevant für einen späteren MinGW-Build des gelifteten Codes (FPU-lastige Funktionen).
 - **Abweichung:** Der in Phase 2 notierte „difftest gegen eine Juiced-Funktion"-Aufruf war nicht

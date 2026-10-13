@@ -94,9 +94,16 @@ Kurzformat: **Kontext → Entscheidung → Begründung → Alternativen.**
 - **Befund:** Im GCC-Pfad legt der Linker das im Header **weak** definierte, null-initialisierte
   Schattenarray `g_st_i64[8]` (`RECOMP_SHARED_DATA`) überlappend auf die Registerglobals; jeder
   `fp_push`/`fp_pop` überschreibt dadurch `eax/ecx/edx/esp/ebx`.
-- **Entscheidung:** Als **Umgebungsartefakt** dokumentieren. Der pcrecomp-Klon bleibt unverändert
-  (kein dauerhafter Patch), bis ein 32-Bit-/MSVC-Pfad feststeht. Ohne `weak` (Test) sind 368/368
-  grün — nachgewiesen.
-- **Begründung:** MSVC nutzt `__declspec(selectany)`; die Kollision ist GCC-spezifisch und für
-  den späteren MinGW-Build relevant, aber kein Lift- und kein Juiced-Problem.
+- **Entscheidung:** Als **Umgebungsartefakt** dokumentieren **und** per reproduzierbarem
+  Patch beheben: `scripts/patch_recomp_weak.py` verschiebt die weak-Definition in eine
+  explizite Sektion (`__attribute__((weak, section(".data")))`). `weak` bleibt erhalten →
+  weiterhin genau eine geteilte Instanz über mehrere Übersetzungseinheiten (MSVC unberührt).
+- **Verifikation:** Mit dem Patch **368/368, 0 Fehler**; ein Zwei-TU-Test linkt ohne
+  Duplikat-Fehler und teilt `g_st_i64`. Der pcrecomp-Klon bleibt commit-gepinnt (`d1319ed`);
+  der Fix ist ein separater, idempotenter Schritt (`scripts/reproduce.*`, Schritt 5).
+- **Begründung:** MSVC nutzt `__declspec(selectany)`; GNU ld reserviert bei einer
+  null-initialisierten weak-.bss-Definition (COFF) keinen Platz und legt sie überlappend ab.
+  GCC-spezifisch und für den späteren MinGW-Build (FPU-lastige Funktionen) relevant, aber
+  kein Lift- und kein Juiced-Problem.
+
 
