@@ -26,6 +26,7 @@ juiced.disasm
 
 # --- Logs ---
 *.log
+logs/link_stubs.txt
 
 # --- Python ---
 __pycache__/
@@ -33,6 +34,10 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+
+# --- Ninja-Zustand (falls builddir nicht greift, im Root) ---
+.ninja_log
+.ninja_deps
 
 # --- Sonstiges ---
 *.tmp

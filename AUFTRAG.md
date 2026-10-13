@@ -99,36 +99,35 @@ pcrecomp bietet zwei 32-Bit-Runtimes:
 
 Empfehlung für Juiced: `recomp32` + `native32`. Die Imports (KERNEL32, USER32, D3D9, DSOUND, DINPUT8, WS2_32, OLE32, BINKW32) gehen ans echte Windows – keine DLL-Stubs nötig.
 
-### Schritt 3.2 — Build-Tree generieren
+### Schritt 3.2 — Build (Rohling) — korrigiert
 
-```bash
-python -m tools Juiced.exe --generate-build-tree --output build/
+> **Korrektur:** pcrecomp liefert **kein** `--generate-build-tree` (und `lift/generate.py`
+> erzeugt keinen Build-Tree, sondern nur die `recomp_*.c`). Der verifizierte Weg ist ein
+> Skript-Build der gelifteten C-Dateien.
+
+Voraussetzungen: MSYS2 **MinGW32**-GCC (`mingw-w64-i686-gcc`, `C:\msys64\mingw32\bin\gcc.exe`)
+und die Python-Helfer unter `scripts\`.
+
+```bat
+scripts\build_full.cmd
 ```
 
-Oder manuell: `lift/generate.py` (fast 32-bit generation).
+Ablauf: PE-/Header-Patches (`patch_cc1_laa.py`, `patch_recomp_weak.py`,
+`patch_undefined_labels.py`) → `gen_build_ninja.py` erzeugt `build\build.ninja` →
+`ninja -f build\build.ninja -j12` (parallel, inkrementell, mit ccache). Die Link-Stubs für
+undefinierte `sub_*` entstehen als Ninja-Regel **nach** dem Kompilieren
+(`gen_link_stubs.py` → `logs/link_stubs.txt`).
 
-### Schritt 3.3 — CMake-Build (x86-32)
+Ergebnis: **`build\juiced_full.exe`** (32-Bit-PE, machine `0x014C`). Zeiten (12 Kerne):
+Kalt-Vollbau 12,9 min, inkrementell 2,9 min — Details in `docs/reproduktion.md` §3.3b/3.3c.
 
-Wichtig: CMake/Ninja werden **nicht** von pcrecomp benötigt, sondern für das Build der gelifteten C-Dateien. pcrecomp liefert `templates/` mit Starter-CMakeLists.
+### Schritt 3.3 — CMake-Build (zurückgestellt)
 
-```cmake
-cmake_minimum_required(VERSION 3.20)
-project(juiced_recomp C)
-set(CMAKE_C_STANDARD 99)
-# 32-Bit erzwingen
-if(MSVC)
-    set(CMAKE_GENERATOR_PLATFORM Win32)
-else()
-    add_compile_options(-m32)
-endif()
-# pcrecomp-Runtime
-add_subdirectory(pcrecomp/runtime/recomp32)
-add_subdirectory(pcrecomp/runtime/native32)
-# Gelifteter Code
-file(GLOB LIFTED_SOURCES "juiced_lifted/*.c")
-add_executable(juiced_recomp src/main.c ${LIFTED_SOURCES})
-target_link_libraries(juiced_recomp recomp32 native32)
-```
+Ein CMake-Build ist **noch nicht** der Weg: pcrecomp liefert nur
+`templates/CMakeLists.txt.template`, und die `runtime/`-Ordner haben **keine** CMakeLists.
+CMake lohnt sich erst, wenn der Rohling steht und einzelne Funktionen **manuell** ersetzt/
+optimiert werden (dann selektiver Build statt Monolith). Bis dahin gilt der Ninja-Skript-Build
+aus Schritt 3.2.
 
 ### Schritt 3.4 — PoC: Eine Funktion end-to-end
 
@@ -142,7 +141,12 @@ Verifikation mit `difftest.py`:
 python tools/lift/difftest.py Juiced.exe --function 0x401000
 ```
 
-Das ist der entscheidende Test: `difftest.py` vergleicht geliftetes C vs. Unicorn für x86-32 – jedes Register, jedes Flag, jedes Byte.
+> **Korrektur:** Diesen Aufruf gibt es nicht. `difftest.py` nimmt **kein** Exe-/Funktions-
+> Argument, sondern prüft einen festen Instruktions-Corpus (368 Fälle) gegen Unicorn
+> (Lifter-PoC). Für einen Juiced-Funktions-PoC braucht es einen eigenen Differenz-Harness
+> (geliftete Blattfunktion vs. Unicorn; Blätter findet `tools/disasm/callgraph.py`).
+
+Das bleibt der entscheidende Test: geliftetes C vs. Unicorn für x86-32 – jedes Register, jedes Flag, jedes Byte.
 
 ## Was nicht gemacht wird
 

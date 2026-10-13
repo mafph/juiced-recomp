@@ -138,13 +138,34 @@ Kurzformat: **Kontext → Entscheidung → Begründung → Alternativen.**
   2. **`label 'L_…' used but not defined`** (15 Dateien / 37 Labels): Lift-Defekt für Sprungziele
      aus dem linearen Over-Scan → `scripts/patch_undefined_labels.py` ergänzt die fehlende
      Label-Definition am Funktionsanfang (nur Garbage-/Dead-Code).
-  3. **Undefinierte `sub_*`** (20.697): Ziele außerhalb von Katalog/Image → `scripts/gen_link_stubs.py`
-     erzeugt aus `nm -u` weak-Leer-Stubs (i686-PE: führender Unterstrich `_sub_…` beachten).
+  3. **Undefinierte `sub_*`** (20.697 von den TUs **referenziert**, davon **17.124 nirgends
+     definiert** = „schwarze Löcher"): Ziele außerhalb von Katalog/Image → `scripts/gen_link_stubs.py`
+     erzeugt weak-Leer-Stubs; die vollständige Liste liegt in `logs/link_stubs.txt`. Stubs
+     müssen **nach** dem Kompilieren erzeugt werden (nm über die Objekte).
      Zusätzlich `-Wno-error=implicit-function-declaration` (gcc 14+ stufte das zum Fehler hoch).
-- **Ergebnis:** `scripts/build_full.cmd` → **`build\juiced_full.exe`, 394,8 MB, machine 0x014C
-  (i386), läuft**; 120 TUs in ~40 min, Link ~3,3 min. Verbleibende obige Punkte sind
-  Werkzeug-/Lift-Randfälle in nicht erreichbarem Code, nicht Teil der verifizierten Logik.
+- **Ergebnis:** `scripts/build_full.cmd` → **`build\juiced_full.exe`, 376,1 MB, machine 0x014C
+  (i386), läuft**. Verbleibende obige Punkte sind Werkzeug-/Lift-Randfälle in nicht erreichbarem
+  Code, nicht Teil der verifizierten Logik.
 - **Grenze:** Der Vollbau beweist Übersetz-/Linkbarkeit als 32-Bit-PE, **nicht** die
   Lauffähigkeit des Spiels (Smoke-`main`, kein Speicher-Layout/Imports/DRM).
 - **Begründung:** Alle drei Blocker sind umgebungs- bzw. randcodebedingt und per Skript
   behebbar; die Abweichung zu pcrecomp bleibt als umgebungsnahe Dokumentation sichtbar.
+
+## E13 — Build über Ninja (parallel + inkrementell) mit ccache
+
+- **Kontext:** Der erste Vollbau lief sequenziell (~40 min) und war für Iterationen untauglich;
+  Ziel waren < 15 min (Voll) bzw. < 2 min (inkrementell).
+- **Entscheidung:** Die `for`-Schleife in `build_full.cmd` wird durch einen **Ninja**-Build
+  ersetzt. `scripts/gen_build_ninja.py` erzeugt `build\build.ninja`:
+  Regel `cc` (Präfix **ccache**, falls vorhanden) + `link` + `stubs` (erzeugt
+  `link_stubs.c` per `nm` über die Objekte **nach** dem Kompilieren). Explizite Header-Deps
+  (`recomp_funcs.h`, `recomp_types.h`) sichern korrekte Inkrementalität. State via `builddir = build`
+  (ersatzweise gitignored `.ninja_log`/`.ninja_deps`).
+- **Ergebnis:** Kalt-Vollbau **12,9 min** (Ziel < 15 ✔); inkrementell **2,9 min** (Ziel < 2 ✘).
+- **Grenze / Begründung:** Der **Single-Thread-GNU-`ld`**-Link (~165 s, unabhängig von
+  `--gc-sections`: 166/168 s) dominiert den inkrementellen Fall; ccache hilft nur beim
+  Kompilieren. **`lld`** würde das lösen, ist auf diesem System aber nicht lauffähig
+  (`ucrt64-lld` → `0xC0000139`; kein i686-`lld`-Paket). Workaround: einzelne Objekte bauen
+  (`ninja … build/full/recomp_XXXX.o`).
+- **Offen:** Falls ein funktionierendes 32-Bit-`lld` verfügbar wird, nur die Link-Regel
+  (`ld.lld`/`-fuse-ld=lld`) in `gen_build_ninja.py` umstellen → Inkrementell-Ziel erreichbar.

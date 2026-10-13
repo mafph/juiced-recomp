@@ -157,7 +157,10 @@ Ziel: Müll aus `.securom` und der Nullsektion entfernen, Sektionen als Daten ma
   (772,7 MB) zu einem 32-Bit-PE zu linken.
 - **Vorbereitung (Toolchain):** Kein 32-Bit-Compiler vorhanden gewesen. Per MSYS2/pacman
   nachinstalliert: `mingw-w64-i686-gcc` (gcc **16.2.0**, Target `i686-w64-mingw32`),
-  `mingw-w64-i686-cmake` (CMake 4.4.4), `mingw-w64-i686-ninja` (1.13.2) — siehe `umgebung.md`.
+  `mingw-w64-i686-cmake` (CMake 4.4.4), `mingw-w64-i686-ninja` (1.13.2) und
+  `mingw-w64-i686-ccache` (**4.14.1**) — siehe `umgebung.md`.
+  Hinweis: gcc/cc1/ccache laden ihre DLLs aus `C:\msys64\mingw32\bin`; die Build-Skripte
+  setzen diesen Pfad selbst (`set "PATH=…`), da sonst `cc1.exe` **still** mit exit 1 stirbt.
 
 #### 3.1–3.3a PoC-Smoke-Link (eine TU)
 
@@ -168,14 +171,22 @@ Ziel: Müll aus `.securom` und der Nullsektion entfernen, Sektionen als Daten ma
 - **Tatsächlich:** **`build\juiced_poc.exe`, 14,36 MB, machine `0x014C` (i386, 32-bit)**,
   läuft, `sizeof(void*)=4`. `recomp_0000.c` (5,58 MB, 500 Fn) kompiliert in ~9 s.
 
-#### 3.1–3.3b Vollbau (alle 120 TUs)
+#### 3.1–3.3b Vollbau (alle 120 TUs) — Ninja, parallel + inkrementell
 
 - **Befehl:** `scripts\build_full.cmd`
 - **Schritte:** `patch_cc1_laa.py` (s. u.) → `patch_recomp_weak.py` → `patch_undefined_labels.py`
-  (s. u.) → i686-gcc kompiliert **120 TUs** → `gen_link_stubs.py` (s. u.) → Link
-  `-Wl,--gc-sections`.
-- **Tatsächlich:** **`build\juiced_full.exe`, 394,8 MB, machine `0x014C` (i386, 32-bit)**,
-  läuft, `sizeof(void*)=4`. Kompilierung **120 TUs in ~40 min**, Link **~3,3 min**.
+  → `gen_build_ninja.py` (erzeugt `build\build.ninja`) → `ninja -f build\build.ninja -j12`.
+  Kompilieren **und** Linken übernimmt Ninja; die Link-Stubs entstehen als eigene Ninja-Regel
+  `stubs` **nach** dem Kompilieren (`nm` über `build\full\*.o`).
+- **Tatsächlich:** **`build\juiced_full.exe`, 376,1 MB, machine `0x014C` (i386, 32-bit)**,
+  läuft, `sizeof(void*)=4`.
+- **Zeiten (12 Kerne, i686-gcc 16.2.0, ccache 4.14.1):**
+
+  | Lauf | Zeit | Anmerkung |
+  |---|---|---|
+  | Kalt-Vollbau (120 TUs) | **12,9 min** | Objektphase ~10,2 min + Link ~2,7 min; ccache kalt (245 Misses) |
+  | Inkrementell (1 TU berührt) | **2,9 min** | ccache 122/122 Hits (TU sofort), Rest Stubs+Link |
+
 - **Auftretende Blocker (gelöst):**
   1. **`cc1.exe: out of memory`** bei den größten TUs (bis 37 MB) — der i686-`cc1` ist selbst
      32-Bit und ohne LAA auf ~2 GB begrenzt. Fix: LARGE_ADDRESS_AWARE-Bit in `cc1.exe`/`cc1plus.exe`
@@ -185,16 +196,43 @@ Ziel: Müll aus `.securom` und der Nullsektion entfernen, Sektionen als Daten ma
      für Sprungziele aus dem linearen Over-Scan. Fix: `scripts/patch_undefined_labels.py`
      (Label-Definition am Funktionsanfang, betrifft nur Garbage-/Dead-Code).
   3. **`implicit declaration of function`** (gcc 14+ = Fehler): nur `-Wno-error=implicit-function-declaration`.
-  4. **Undefinierte `sub_*`** (20.697 Symbole, Ziele außerhalb des Funktionskatalogs/Images):
-     `scripts/gen_link_stubs.py` erzeugt aus `nm -u` weak-Leer-Stubs (Achtung: i686-PE-Symbole
-     tragen führenden Unterstrich, `_sub_…`).
+  4. **Undefinierte `sub_*`** — 20.697 von den TUs **referenzierte** Symbole, davon **17.124
+     nirgends definiert** (Ziele außerhalb des Katalogs/Images = „schwarze Löcher"). `scripts/gen_link_stubs.py`
+     erzeugt dafür weak-Leer-Stubs; die vollständige Liste landet in **`logs/link_stubs.txt`**
+     (Aufrufe liefern später Müll — beim Aufräumen relevant). i686-PE-Symbole tragen einen
+     führenden Unterstrich (`_sub_…`).
 - **Abweichungen / Hinweise:**
   - `poc\main.c` ist ein **Smoke-Einstieg** ohne Speicher-Layout/Imports — es wird **kein
     Spielcode ausgeführt**; der PoC belegt nur Übersetz- und Linkbarkeit als 32-Bit-PE.
   - `--unresolved-symbols=ignore-all` wird von diesem mingw-ld im PE-Pfad **nicht** honoriert;
     daher weak-Stubs (`gen_weak_stubs.py`/`gen_link_stubs.py`).
-  - Das CMake-Skelett `poc\CMakeLists.txt` ist die Vorlage für einen inkrementellen Vollbau;
-    der verifizierte Ablauf ist `scripts\build_full.cmd`.
+  - Die Stub-Erzeugung **muss nach** dem Kompilieren laufen (sie scannt die Objekte); im
+    Ninja-Graph steuert das die Regel-Reihenfolge.
+
+#### 3.3c Build-Optimierung (Parallelität, ccache, inkrementell)
+
+- **Befehl:** `python scripts\gen_build_ninja.py` → `ninja -f build\build.ninja [-jN]`
+- **Design:** Die frühere sequenzielle `for`-Schleife in `build_full.cmd` wurde durch einen
+  generierten **`build.ninja`** ersetzt. Ninja kompiliert **parallel** (`-j`, Default `NINJA_J=12`)
+  und **inkrementell** (nur geänderte TUs + Link). **ccache** wird als Compiler-Präfix genutzt,
+  wenn `C:\msys64\mingw32\bin\ccache.exe` vorhanden ist.
+- **Nur Teil-Builds / einzelne Objekte:**
+  - inkrementell neu bauen: `ninja -f build\build.ninja`
+  - ein Objekt: `ninja -f build\build.ninja build/full/recomp_0000.o`
+  - Zustand (`.ninja_log`/`.ninja_deps`) liegt über `builddir = build` bzw. im Repo-Root
+    (gitignored).
+- **Ziele vs. erreicht:**
+  - Vollbuild **< 15 min** → **erreicht** (12,9 min kalt).
+  - Inkrementell **< 2 min** → **nicht erreicht** (2,9 min). Flaschenhals ist der
+    **Single-Thread-GNU-Linker** (`ld`): **~165 s**, praktisch unabhängig von `--gc-sections`
+    (mit 168 s / ohne 166 s gemessen). ccache wirkt nur auf das Kompilieren (geänderte TU =
+    sofortiger Hit). Ein Ersatzlinker **LLVM `lld`** würde das lösen, ist hier aber
+    **nicht lauffähig** (`ucrt64-lld` bricht mit `0xC0000139` `STATUS_ENTRYPOINT_NOT_FOUND`
+    ab, wie zuvor `ucrt64-clang`; ein natives i686-`lld`-Paket existiert nicht). Workaround für
+    schnelle Editier-Iteration: nur einzelne Objekte bauen.
+- **`-w` versteckt Warnungen:** Gebaut wird mit `-w` (Warnungen aktuell nicht
+  handlungsleitend). Sobald der PoC läuft, **einmal ohne `-w`** bauen und die Warnungen nach
+  **`logs/warnings.txt`** sammeln — das ist die Prioritätenliste beim Aufräumen.
 
 ### 3.4 PoC (difftest)
 

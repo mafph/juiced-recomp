@@ -26,6 +26,7 @@ Stand: siehe Commit-Historie (diese Datei wird pro Schritt aktualisiert).
 | mingw-w64-i686-gcc (32-bit) | 16.2.0 | `C:\msys64\mingw32\bin\gcc.exe` (Target `i686-w64-mingw32`) |
 | CMake | 4.4.4 | `C:\msys64\mingw32\bin\cmake.exe` |
 | Ninja | 1.13.2 | `C:\msys64\mingw32\bin\ninja.exe` |
+| ccache | 4.14.1 | `C:\msys64\mingw32\bin\ccache.exe` (Compiler-Praefix im Ninja-Build) |
 | 64-bit-gcc (nur difftest) | 15.2.0 | `C:\msys64\ucrt64\bin\gcc.exe` (Target `x86_64-w64-mingw32`) |
 
 ## pcrecomp
@@ -54,8 +55,11 @@ Per MSYS2/pacman nachinstalliert (Repo `mingw32`), für den 32-Bit-Build der Run
 + des gelifteten Codes:
 
 ```
-pacman -S mingw-w64-i686-gcc mingw-w64-i686-cmake mingw-w64-i686-ninja
+pacman -S mingw-w64-i686-gcc mingw-w64-i686-cmake mingw-w64-i686-ninja mingw-w64-i686-ccache
 ```
+
+Wichtig: `gcc`/`cc1`/`ccache` laden ihre DLLs aus `C:\msys64\mingw32\bin`; die Build-Skripte
+setzen diesen Pfad selbst voran (sonst stirbt `cc1.exe` **still** mit exit 1).
 
 MSVC 2022 ohne C++-Workload ist weiterhin nicht nutzbar; der GCC-Pfad erfordert den
 Runtime-Fix `scripts/patch_recomp_weak.py` (siehe ADR E10).

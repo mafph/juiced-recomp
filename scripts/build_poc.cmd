@@ -7,6 +7,8 @@ REM =====================================================================
 setlocal enableextensions
 set "ROOT=%~dp0.."
 cd /d "%ROOT%"
+REM gcc/cc1 brauchen ihre DLLs aus mingw32\bin im PATH (sonst cc1.exe still exit 1).
+set "PATH=C:\msys64\mingw32\bin;%PATH%"
 if not exist logs mkdir logs
 if not exist build mkdir build
 
