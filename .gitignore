@@ -1,0 +1,32 @@
+# --- Spiel-Binary / Originalmaterial (NICHT committen) ---
+Juiced.exe
+*.exe
+*.dll
+*.bin
+
+# --- Extrahierte Werkzeuge / Ghidra ---
+tools/
+ghidra_proj/
+
+# --- Dekompilierter / gelifteter Output (Derivat des Originals) ---
+decompiled/
+juiced_lifted/
+build/
+src/recomp/
+
+# --- pcrecomp-Clone (eigenes Repo) ---
+pcrecomp/
+nfsu2-recompiled/
+
+# --- Logs ---
+*.log
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# --- Sonstiges ---
+*.tmp

@@ -1,0 +1,158 @@
+# Auftrag (korrigiert): Juiced.exe — x86 → x86 Rekompilierung
+
+## Phase 0: Grundlagen klären
+
+Ziel: Die korrigierten Annahmen als verbindliche Grundlage festschreiben.
+
+- pcrecomp ist **Python (3.10+)** – keine LLVM/CMake/Ninja-Toolchain. Abhängigkeiten: `capstone` (Pflicht), `pefile`, `lief`, `unicorn`, `cryptography`.
+- pcrecomp nutzt **nicht** das Ghidra-Projekt. Es disassembliert die EXE selbst via capstone. Die Ghidra-Bereinigung (Phase 1) ändert den pcrecomp-Input nicht. Für pcrecomp zählt nur: `disasm32` rekursiert vom Entry/Exports; `.securom` und Nullsektion werden nicht erreicht, solange sie nicht aufgerufen werden. `analyze_sections.py` erkennt SecuROM.
+- Die korrigierten CLI-Kommandos:
+  - `python tools/pe/pe_analyze.py Juiced.exe --json …`
+  - `python tools/disasm/disasm32.py …`
+  - `python -m tools Juiced.exe --all --output …` (das ist `translator.py`, der einzige Lifter-CLI)
+- pcrecomp bringt die passenden Bausteine:
+  - `runtime/native32` – 32-Bit-Host, Imports gehen ans echte Windows, keine DLL-Stubs nötig
+  - `runtime/recomp32` / `recomp32_cpu` – 32-Bit-Laufzeit
+  - `hybrid` – CRT/MFC real lassen
+  - `lift/difftest.py` (Unicorn) für den PoC
+
+## Phase 1: Ghidra-Bereinigung
+
+Ziel: Müll-Funktionen aus `.securom` und der Nullsektion entfernen, diese Sektionen als Daten markieren. **Wichtig:** Das dient dem Verständnis und der späteren Arbeit – pcrecomp wird dadurch nicht beeinflusst.
+
+> **MCP-Hinweis (pyghidra-mcp 0.2.7):** Verfügbar sind u. a. `list_project_binaries`, `list_project_binary_metadata`, `decompile_function`, `disassemble`, `read_bytes`, `list_xrefs`, `search_symbols_by_name`, `search_strings`, `set_comment`, `rename_function`, `save`. **Nicht** verfügbar: `clear` (Löschen von Funktionen/Instruktionen) und `list_functions`. Für das Löschen/Markieren von Bereichen daher ein **eigenes Ghidra-Headless-Skript** verwenden (z. B. PostScript Java/Python) – oder die Ghidra-Skripte aus pcrecomp (`tools/ghidra/*.java`: range disassembly, function bounds, export functions).
+
+1. **Sektionsgrenzen verifizieren** (MCP: `list_project_binary_metadata`).
+2. **Stichproben aus .text1 prüfen** (MCP: `decompile_function`, `disassemble`, `read_bytes`).
+3. **.data2 klassifizieren** – ist dort echter Code oder nur Daten/Sprungtabellen? (MCP: `disassemble`, `list_xrefs`).
+4. **Müll entfernen**: `.securom` + Nullsektion als Daten markieren, Funktionen löschen (MCP: `set_comment`; Löschen via Headless-Skript).
+5. **Ergebnis verifizieren**: Funktionszahl prüfen → erwartete Zahl ~11.700–11.900 (via Headless-Skript bzw. Export-Zählung).
+6. **Sauberer Re-Export** (nur als Referenz, nicht als pcrecomp-Input).
+
+## Phase 2: pcrecomp — x86 → x86
+
+Ziel: Die Juiced.exe mit pcrecomp in portablen C-Code liften. Kein x64, keine Architekturänderung.
+
+### Schritt 2.1 — pcrecomp beschaffen
+
+```bash
+git clone https://github.com/sp00nznet/pcrecomp
+cd pcrecomp
+pip install -r requirements.txt   # oder laut README: pip install capstone pefile lief unicorn cryptography
+```
+
+Deps prüfen: `capstone`, `pefile`, `lief`, `unicorn`, `cryptography`.
+
+### Schritt 2.2 — PE-Analyse (Phase "Analyse")
+
+```bash
+python tools/pe/pe_analyze.py Juiced.exe --json juiced_pe.json
+```
+
+Erwartetes Ergebnis: Header, Sektionen, Imports, Exports als JSON.
+
+Optional: `python tools/pe/analyze_sections.py Juiced.exe` → Packing/DRM-Erkennung (SecuROM).
+
+### Schritt 2.3 — Disassemblierung (Phase "Find functions")
+
+```bash
+python tools/disasm/disasm32.py Juiced.exe --output juiced.disasm
+```
+
+Wichtig: `disasm32` ist rekursiver Descent vom Entry Point, Exports und `--seed-functions`. Die `.securom`-Sektion und die Nullsektion werden nicht erreicht, solange sie nicht aufgerufen werden.
+
+Optional für bessere Abdeckung:
+
+- `python tools/cpp/rtti.py` → RTTI/vtables
+- `python tools/disasm/callgraph.py` → Aufrufgraphen
+- `python tools/lift/recover.py` → verpasste Einstiegspunkte
+
+### Schritt 2.4 — Lift (Phase "Lift")
+
+Der einzige Lifter-CLI ist `translator.py`:
+
+```bash
+python -m tools Juiced.exe --all --output juiced_lifted/
+```
+
+Das ist die Standard-32-Bit-Pipeline: analyse → disassemble → lift → split into files.
+
+Alternative (falls nötig):
+
+- `python tools/lift/lift32.py` → Library (global registers)
+- `python tools/lift/lift32_cpu.py` → Library (CPU struct, reentrant, für hybrid builds)
+
+Erwartetes Ergebnis: C-Dateien mit allen gelifteten Funktionen.
+
+## Phase 3: Build und PoC
+
+### Schritt 3.1 — Runtime wählen
+
+pcrecomp bietet zwei 32-Bit-Runtimes:
+
+| Runtime | Beschreibung | Wann |
+|---|---|---|
+| `recomp32` | 32-Bit, global registers | Standard |
+| `recomp32_cpu` | 32-Bit, explizite CPU-Struct, reentrant | Für hybrid builds |
+| `native32` | 32-Bit-Host, Imports gehen ans echte Windows | Für Juiced (keine DLL-Stubs nötig) |
+| `hybrid` | Lifted ↔ real boundary, CRT/MFC real | Wenn CRT/MFC gebraucht wird |
+
+Empfehlung für Juiced: `recomp32` + `native32`. Die Imports (KERNEL32, USER32, D3D9, DSOUND, DINPUT8, WS2_32, OLE32, BINKW32) gehen ans echte Windows – keine DLL-Stubs nötig.
+
+### Schritt 3.2 — Build-Tree generieren
+
+```bash
+python -m tools Juiced.exe --generate-build-tree --output build/
+```
+
+Oder manuell: `lift/generate.py` (fast 32-bit generation).
+
+### Schritt 3.3 — CMake-Build (x86-32)
+
+Wichtig: CMake/Ninja werden **nicht** von pcrecomp benötigt, sondern für das Build der gelifteten C-Dateien. pcrecomp liefert `templates/` mit Starter-CMakeLists.
+
+```cmake
+cmake_minimum_required(VERSION 3.20)
+project(juiced_recomp C)
+set(CMAKE_C_STANDARD 99)
+# 32-Bit erzwingen
+if(MSVC)
+    set(CMAKE_GENERATOR_PLATFORM Win32)
+else()
+    add_compile_options(-m32)
+endif()
+# pcrecomp-Runtime
+add_subdirectory(pcrecomp/runtime/recomp32)
+add_subdirectory(pcrecomp/runtime/native32)
+# Gelifteter Code
+file(GLOB LIFTED_SOURCES "juiced_lifted/*.c")
+add_executable(juiced_recomp src/main.c ${LIFTED_SOURCES})
+target_link_libraries(juiced_recomp recomp32 native32)
+```
+
+### Schritt 3.4 — PoC: Eine Funktion end-to-end
+
+Ziel: Eine einfache Funktion aus `.text1` auswählen, liften, kompilieren, ausführen.
+
+Kriterien: Keine DLL-Aufrufe, keine berechneten Sprünge, reine Berechnung.
+
+Verifikation mit `difftest.py`:
+
+```bash
+python tools/lift/difftest.py Juiced.exe --function 0x401000
+```
+
+Das ist der entscheidende Test: `difftest.py` vergleicht geliftetes C vs. Unicorn für x86-32 – jedes Register, jedes Flag, jedes Byte.
+
+## Was nicht gemacht wird
+
+- Kein x64. Kein Zeigerumbau, keine ABI-Anpassung.
+- Kein manuelles Portieren aller 11.000+ Funktionen. `translator.py` macht die Massenarbeit.
+- Kein DLL-Ersatz. `native32` erledigt das über echte Windows-Imports.
+- Kein Liften der `.securom`-Sektion. Die wird von `disasm32` nicht erreicht.
+
+## Risiken (korrigiert)
+
+- pcrecomp ist experimentell: Bei SEH, TLS und berechneten Sprüngen kann es scheitern. Der NFSU2-Fork hat Erweiterungen.
+- BinkW32: Proprietär, 32-Bit. `native32` leitet den Import an das echte Windows weiter – wenn BinkW32 auf dem System vorhanden ist. Ohne BinkW32-DLL läuft kein Video.
+- `.data2`: Falls dort Code liegt, der von `disasm32` nicht erreicht wird, fehlen Funktionen im Lift. `lift/recover.py` kann helfen.
