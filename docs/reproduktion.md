@@ -151,16 +151,29 @@ Ziel: Müll aus `.securom` und der Nullsektion entfernen, Sektionen als Daten ma
 
 ## Phase 3 — Build und PoC
 
-### 3.1–3.3 Runtime + CMake-Build
+### 3.1–3.3 Runtime + 32-Bit-Build (PoC)
 
-- **Erwartet:** 32-Bit-Host-Compiler + CMake/Ninja zum Bau der Runtime `recomp32`/`native32`
-  mit dem gelifteten C (772,7 MB) als PoC.
-- **Tatsächlich:** **blockiert.** Auf dem System vorhanden ist als einziger Compiler
-  `C:\msys64\ucrt64\bin\gcc.exe` (gcc 15.2.0, Target `x86_64-w64-mingw32`, **64-Bit**) sowie
-  `C:\msys64\usr\bin\make.exe`. Ein 32-Bit-Build benötigt zusätzlich `mingw-w64-i686-gcc`
-  (MSYS2) **und** CMake; beides fehlt (kein `cl`/`clang`/`cc`/`cmake`/`ninja`/`nmake`/`msbuild`
-  auf PATH, VS2022 ohne C++-Workload, WSL ohne installierte Distro).
-- **Konsequenz:** Der eigentliche Spiel-Build ist bis zur Klärung der Toolchain nicht möglich.
+- **Erwartet:** 32-Bit-Host-Compiler + CMake/Ninja, um die Runtime `recomp32` mit dem
+  gelifteten C zu einem 32-Bit-PE zu linken.
+- **Vorbereitung (Toolchain):** Kein 32-Bit-Compiler vorhanden gewesen. Per MSYS2/pacman
+  nachinstalliert: `mingw-w64-i686-gcc` (gcc **16.2.0**, Target `i686-w64-mingw32`),
+  `mingw-w64-i686-cmake` (CMake 4.4.4), `mingw-w64-i686-ninja` (1.13.2) — siehe `umgebung.md`.
+- **Befehl (PoC, verifiziert):** `scripts\build_poc.cmd` (bzw. deren Einzelschritte)
+- **Schritte:** (1) `scripts\patch_recomp_weak.py` (ADR E10); (2) `scripts\gen_weak_stubs.py`
+  → `build\poc_stubs.c`; (3) i686-gcc kompiliert `poc\main.c` und `juiced_lifted\recomp_0000.c`
+  (`-O0 -w -ffunction-sections`, Prototypen per `-include recomp_funcs.h`); (4) Link mit
+  `-Wl,--gc-sections` gegen die weak-Stubs.
+- **Tatsächlich:** **`build\juiced_poc.exe`, 14,36 MB, machine `0x014C` (i386, 32-bit)**.
+  Läuft und meldet `sizeof(void*)=4`. Eine echte geliftete TU (`recomp_0000.c`, 5,58 MB,
+  500 Funktionen) kompiliert in ~9 s.
+- **Abweichungen / Hinweise:**
+  - `poc\main.c` ist ein **Smoke-Einstieg** ohne Speicher-Layout/Imports (führt keinen
+    Spielcode aus). Es stellt die Runtime-Globals bereit und referenziert `sub_00401000`.
+  - `--unresolved-symbols=ignore-all` wird von diesem mingw-ld im PE-Pfad **nicht** honoriert;
+    die fehlenden `sub_*` der übrigen TUs werden daher über generierte **weak-Leer-Stubs**
+    geschlossen (starke Definition gewinnt, sobald die TU mitgelinkt wird).
+  - Der **Vollbau** aller 120 TUs (~772 MB C, Objekte ~600 MB) ist als CMake-Skelett
+    `poc\CMakeLists.txt` hinterlegt, aber noch **nicht** ausgeführt (Zeit/RAM, 32-Bit-ld-Limit).
 
 ### 3.4 PoC (difftest)
 

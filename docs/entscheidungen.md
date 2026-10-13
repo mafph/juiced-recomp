@@ -106,4 +106,21 @@ Kurzformat: **Kontext → Entscheidung → Begründung → Alternativen.**
   GCC-spezifisch und für den späteren MinGW-Build (FPU-lastige Funktionen) relevant, aber
   kein Lift- und kein Juiced-Problem.
 
+## E11 — 32-Bit-Build mit MSYS2-MinGW + Smoke-Link statt Vollbau
 
+- **Kontext:** Für Phase 3 fehlte ein 32-Bit-Compiler (Juiced ist i386; der vorhandene
+  ucrt64-gcc ist 64-Bit). Ziel war ein erster, lauffähiger 32-Bit-PoC.
+- **Entscheidung (Toolchain):** MSYS2-Repo `mingw32` per pacman:
+  `mingw-w64-i686-gcc` 16.2.0, `-cmake` 4.4.4, `-ninja` 1.13.2. Kein MSVC/Clang nötig.
+- **Entscheidung (PoC-Umfang):** `scripts/build_poc.cmd` linkt die Runtime + **eine**
+  geliftete TU (`recomp_0000.c`) zu `build\juiced_poc.exe` (machine 0x014C, 32-bit).
+  Ergebnis: 14,36 MB, läuft, `sizeof(void*)=4`.
+- **Fehlende Symbole:** `--unresolved-symbols=ignore-all` wird vom mingw-ld im PE-Pfad nicht
+  honoriert; die `sub_*` der nicht gelinkten TUs werden über generierte **weak-Leer-Stubs**
+  (`scripts/gen_weak_stubs.py`) geschlossen. Starke Definitionen überschreiben die Stubs,
+  sobald die jeweilige TU im Vollbau mitgelinkt wird — kein Verhalten wird vorgetäuscht.
+- **Vollbau:** `poc\CMakeLists.txt` skelettiert den Link **aller** 120 TUs (~772 MB C),
+  noch **nicht** ausgeführt (Zeit/RAM, 32-Bit-`ld`-Limit). Der PoC belegt die Toolchain,
+  nicht die Lauffähigkeit des Spiels.
+- **Begründung:** Schnellster Nachweis, dass Compiler + Runtime-Fix + gelifteter Code sich zu
+  einem 32-Bit-PE linken lassen, ohne den teuren Vollbau vorzuziehen.

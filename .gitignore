@@ -13,6 +13,7 @@ decompiled/
 juiced_lifted/
 build/
 src/recomp/
+poc/build/
 
 # --- pcrecomp-Clone (eigenes Repo) ---
 pcrecomp/
