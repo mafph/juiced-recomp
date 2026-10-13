@@ -61,18 +61,31 @@ Ziel: Müll aus `.securom` und der Nullsektion entfernen, Sektionen als Daten ma
 ### 1.4 Müll entfernen (`.securom` + Nullsektion)
 
 - **Befehl:** `scripts\run_cleanup.cmd` (Ghidra-Headless, `CleanupSections.java`)
+  - Voraussetzung: MCP-Server gestoppt (`scripts\stop_mcp.cmd`), da er das Projekt sperrt.
+- **Log:** `logs/cleanup.log`
 - **Erwartet:** Funktionen in `.securom` + unbenannter Sektion entfernt, als Daten markiert.
-- **Tatsächlich:** *(folgt)*
+- **Tatsächlich:** `.securom` (0xF93000–0x102FFFF): **322** Funktionen entfernt;
+  unbenannt (0x1030000–0x2141FFF): **5** entfernt. Ghidra-Zählung 13968 → 13332
+  (Netto −636, d. h. über die 327 expliziten hinaus entfernte `clearListing`
+  überlappende Restfunktionen). `DONE_EXIT_0`.
 - **Abweichung:** pyghidra-mcp 0.2.7 hat kein `clear` → Headless-Skript statt MCP.
 
 ### 1.5 Bereinigung verifizieren
 
-- **Tatsächlich:** *(folgt)*
+- **Befehl:** Auswertung von `decompiled/functions.csv` (nach 1.6).
+- **Erwartet:** keine Funktion in 0xF93000–0x2142000.
+- **Tatsächlich:** Gesamt **13128** Funktionen; davon **0** in `.securom`+Nullsektion;
+  **1726** in `.data2` (bewusst behalten, siehe E4); 6 Dekompilier-Fehler.
+- **Abweichung:** Auftrags-Schätzung „~11.700–11.900" galt nur bei Mitlöschung der
+  `.data2`-Funktionen; da `.data2` behalten wird, bleiben 13128.
 
 ### 1.6 Sauberer Re-Export
 
 - **Befehl:** `scripts\run_export.cmd`
-- **Tatsächlich:** *(folgt)*
+- **Log:** `logs/export.log`
+- **Erwartet:** `decompiled/all_functions.c` ohne Müll.
+- **Tatsächlich:** `DONE_EXIT_0`, 13122/13128 Funktionen dekompiliert,
+  `all_functions.c` 19.504.879 Bytes, `functions.csv` 522.944 Bytes (17:22 Uhr).
 
 ---
 

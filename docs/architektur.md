@@ -34,7 +34,9 @@ Merkmale: Die EXE hat **zwei** `.text`-Sektionen (Nr. 1 und 6) und **zwei** `.da
 
 - Projekt: `ghidra_proj/JuicedDecomp.gpr` (Ghidra 12.1.4).
 - Bildsprache: `x86:LE:32:default (4.9)`, Compiler `windows`.
-- ~13.968 Funktionen, ~1.062.086 Instruktionen, 12 Memory Blocks.
+- ~13.968 Funktionen (vor Bereinigung), ~1.062.086 Instruktionen, 12 Memory Blocks.
+- **Nach Bereinigung (Phase 1.4):** 13.132 Funktionen (322 `.securom` + 5 unbenannt
+  entfernt); Re-Export zählt 13.128 Funktionen, davon 1.726 in `.data2`.
 - Zugriff aus opencode über **pyghidra-mcp** (`http://127.0.0.1:8000/mcp`), das das
   bestehende Projekt öffnet. Der MCP-Server hält das Projekt exklusiv → für Headless-Läufe
   (Import/Analyse/Skripte) muss er zuvor gestoppt werden (`scripts/stop_mcp.cmd`).
