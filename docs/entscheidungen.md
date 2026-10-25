@@ -66,6 +66,10 @@ Kurzformat: **Kontext → Entscheidung → Begründung → Alternativen.**
 
 ## E6 — Runtime `native32`
 
+> **Überholt durch E15.** `native32` ist MSVC-x86-only (`#error` in `native32.c`) und unter
+> MinGW nicht baubar. Umgesetzt ist `recomp32` + `image_loader`. E6 bleibt als ursprüngliche
+> Erwägung dokumentiert.
+
 - **Kontext:** Juiced importiert KERNEL32/USER32/D3D9/DSOUND/DINPUT8/WS2_32/OLE32/BINKW32.
 - **Entscheidung:** `recomp32` + `native32`.
 - **Begründung:** `native32` leitet Importe an echtes Windows weiter → **keine DLL-Stubs**

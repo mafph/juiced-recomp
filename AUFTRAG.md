@@ -38,7 +38,8 @@ Ziel: Die Juiced.exe mit pcrecomp in portablen C-Code liften. Kein x64, keine Ar
 ```bash
 git clone https://github.com/sp00nznet/pcrecomp
 cd pcrecomp
-pip install -r requirements.txt   # oder laut README: pip install capstone pefile lief unicorn cryptography
+# ACHTUNG: Der Clone hat KEINE requirements.txt. Versionen siehe docs/umgebung.md.
+pip install capstone pefile lief unicorn cryptography
 ```
 
 Deps prüfen: `capstone`, `pefile`, `lief`, `unicorn`, `cryptography`.
@@ -168,11 +169,15 @@ Das bleibt der entscheidende Test: geliftetes C vs. Unicorn für x86-32 – jede
 
 - Kein x64. Kein Zeigerumbau, keine ABI-Anpassung.
 - Kein manuelles Portieren aller 11.000+ Funktionen. `translator.py` macht die Massenarbeit.
-- Kein DLL-Ersatz. `native32` erledigt das über echte Windows-Imports.
-- Kein Liften der `.securom`-Sektion. Die wird von `disasm32` nicht erreicht.
+- Kein DLL-Ersatz. Die Importe laufen über eine noch zu bauende Import-Bridge
+  (`recomp32` + IAT-Slots); `native32` scheidet aus (MSVC-only).
+- Kein Liften der `.securom`-Sektion. Sie wird per PE-Flag-Patch (E9) aus dem Scan genommen;
+  `disasm32` selbst würde sie sonst mitlesen.
 
 ## Risiken (korrigiert)
 
 - pcrecomp ist experimentell: Bei SEH, TLS und berechneten Sprüngen kann es scheitern. Der NFSU2-Fork hat Erweiterungen.
-- BinkW32: Proprietär, 32-Bit. `native32` leitet den Import an das echte Windows weiter – wenn BinkW32 auf dem System vorhanden ist. Ohne BinkW32-DLL läuft kein Video.
+- BinkW32: Proprietär, 32-Bit. Eine spätere Import-Bridge müsste den Import an das echte
+  Windows weiterleiten – wenn BinkW32 auf dem System vorhanden ist. Ohne BinkW32-DLL läuft
+  kein Video.
 - `.data2`: Falls dort Code liegt, der von `disasm32` nicht erreicht wird, fehlen Funktionen im Lift. `lift/recover.py` kann helfen.

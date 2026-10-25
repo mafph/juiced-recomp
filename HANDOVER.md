@@ -20,13 +20,15 @@ regeneriert wird) und wie man den Stand wieder lauffähig macht.
 | 3.2/3.3 | Ninja-Vollbau → `build\juiced_full.exe` (i386) | fertig |
 | 3.4 | Ein-Funktions-Difftest gegen echten Code (bit-genau) | fertig |
 
-Details: `docs/reproduktion.md`, `docs/entscheidungen.md` (E1–E15), `AUFTRAG.md`.
+Details: `docs/reproduktion.md`, `docs/entscheidungen.md` (E1–E15), `docs/werkzeuge.md`,
+`docs/offene-punkte.md`, `AUFTRAG.md`.
 
-Aktuellster Commit: `dad29b8` (Phase 3.1).
+**Repository:** <https://github.com/mafph/juiced-recomp> (öffentlich, `main`).
+Aktuellster Commit: siehe `git log -1` (die Doku wird laufend ergänzt).
 
 ## 2. Was ist in Git vs. nur lokal?
 
-**In Git (36 Dateien, ~0,2 MB `.git`):** `AUFTRAG.md`, `HANDOVER.md`, `docs/`, `scripts/`,
+**In Git (~43 Dateien, ~0,2 MB `.git`):** `AUFTRAG.md`, `HANDOVER.md`, `docs/`, `scripts/`,
 `poc/*.c`, `logs/.gitkeep`, `opencode.json`, `.gitignore`, `.gitattributes`.
 
 **Gitignored, aber** (teilweise) **unersetzlich:**
@@ -58,7 +60,7 @@ powershell -ExecutionPolicy Bypass -File scripts\make_snapshot.ps1
 Ergebnis: `..\juicedDecomp_snapshot_<YYYYMMDD>\` **und** `..\juicedDecomp_snapshot_<YYYYMMDD>.zip`
 neben dem Projektordner. Inhalt:
 
-- `juicedDecomp-history.bundle` — **komplette Git-Historie** (kein Remote vorhanden!)
+- `juicedDecomp-history.bundle` — **komplette Git-Historie** (unabhängig vom GitHub-Remote)
 - `source.zip` — alle getrackten Dateien des aktuellen Commits
 - `data/` — `Juiced.exe`, `juiced_pe.json`, `juiced_functions.json`, `decompiled/`,
   `pcrecomp/` (inkl. `.git`), `logs/`, `opencode.json`
