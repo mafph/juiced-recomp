@@ -291,4 +291,59 @@ acht GPRs, die definierten EFLAGS (CF/PF/AF/ZF/SF/DF/OF) und der beschriebene Ga
   Image-Mapping (`.rdata`/`.data` an Original-VAs); Funktionen mit eingebettetem `ret` (früher
   Rücksprung) werden derzeit abgelehnt (`difftest_fn.py` bricht mit klarer Meldung ab).
 
+### 3.6 Runtime main — echtes Image + gelifteter Code (Phase 3.1)
+
+Beweist das **Speichermodell der Runtime**: das Original-Image wird zur Laufzeit an echten
+VAs gemappt, `g_mem_base` entsprechend gesetzt, und geliftete Funktionen greifen über
+`ADDR`/`MEM32` auf die echten Programmstart-Daten zu.
+
+- **Baustein:** `pcrecomp\runtime\recomp32\image_loader.c` (`recomp_load_image(path, base)`) —
+  parst die Sektionstabelle zur Laufzeit, kopiert Headers + Sektionen RWX an die VAs, nullt `.bss`.
+- **Host-Base:** `build\juiced_run.exe` wird mit `-Wl,--image-base,0x10000000` gelinkt, damit das
+  eigene Image nicht mit der Ziel-VA kollidiert (Ninja-Regel `linkrun`, generiert von
+  `scripts\gen_build_ninja.py`).
+- **Rebase:** Da `0x00400000` im 32-Bit-Prozess durch DLL-ASLR belegt sein kann, probiert
+  `poc\runtime_main.c` mehrere Basen (`0x400000`, `0x30000000`, …) und setzt
+  `g_mem_base = base - 0x400000`; der geliftete Code rechnet jede Gast-VA über `ADDR(va)=va+g_mem_base`.
+- **Stack:** `VirtualAlloc` bei `0x00300000` (1 MB). Wichtig: `g_esp` ist eine **Gast-VA**
+  (`HOST2GUEST`), denn auch Stack-Zugriffe laufen über `ADDR(esp)=esp+g_mem_base`.
+- **TIB/SEH:** `g_fs_base` zeigt auf eine simulierte TIB in der Null-Region des gemappten Images
+  (`0x01030000`), mit `fs:[0] = 0xFFFFFFFF` (SEH-Terminator), `fs:[4]`/`fs:[8]` = StackBase/Limit
+  und `fs:[0x18] = Self`.
+- **Diagnose:** VEH-Handler druckt bei AV die Zieladresse, `g_cur_func`, alle Register und den
+  ICALL-Ringpuffer (`g_icall_trace`); `recomp_lookup_import` liefert `NULL`, damit unaufgelöste
+  Importe **geloggt** werden (`ICALL: unresolved VA … from …`).
+- **Import-Namen:** `scripts\iat_names.py` löst IAT-Slots bzw. gebundene Adressen über die
+  Import-Tabelle auf (`0x6CC1EC → kernel32.dll!GetVersionExA`).
+- **Bauen/Starten:**
+  ```bat
+  scripts\run_image.cmd
+  ```
+  (baut nur die neuen Objekte + `linkrun`; Voraussetzung `build\full\*.o` aus `build_full.cmd`.)
+
+- **Ergebnis** (Log `logs\run_image.log`):
+  ```
+  [*] Image 'Juiced.exe' -> Base 0x30000000 (g_mem_base=0x2FC00000), 30687232 Bytes
+  [*] Stack: ESP=0xD07FFFF0   Dispatch: 59554 Funktionen
+  [1] sub_006C0E80: [0x72AD9C]=0x00000000 -> [0x76A090]=0x00000000  OK
+  [2] sub_0040AC90: [0x7019A8]=1.38  st0=1.38  fp_top=1  OK
+  [3] EP 0x005CD316 aufrufen ...
+  ICALL: unresolved VA 0x7C812B6E from 0x005CD316
+  ICALL: unresolved VA 0x7C80B731 from 0x005CD316
+  [CRASH] AV @ 0x184B1C44   READ @ 0x2FC00000
+  ```
+  - **Test 1** (`mov eax,[0x72AD9C]; mov [0x76A090],eax`) und **Test 2**
+    (`fld dword [0x7019A8]`) lesen echte `.data`-Globals: Speichermodell + FPU-Global korrekt.
+  - **Test 3** (EP 0x005CD316) läuft jetzt durch den **SEH-Prolog**
+    (`0x005CFB1C → 0x004BCA66 → 0x005CFB21`) und erreicht die ersten **echten IAT-Importe**:
+    `0x7C812B6E` = `kernel32!GetVersionExA`, `0x7C80B731` = `kernel32!GetModuleHandleA`
+    (beides gebundene XP-Adressen aus der Import-Tabelle). Danach folgt ein Zugriff auf
+    `ADDR(0)` — ein Import, der `NULL` liefert, wird als Zeiger benutzt/aufgerufen.
+  - **Belegte Kernpunkte:** Image-Mapping ✓, Rebase über `g_mem_base` ✓, Stack als Gast-VA ✓,
+    TIB/`fs:[0]` ✓, Import-Aufrufe werden sichtbar/loggbar ✓.
+
+- **Nächste Stufe:** Import-Bridge — IAT-Slots auf echte Host-Funktionen oder Stubs mit
+  bekanntem stdcall-`argc` umbiegen (die Import-Tabelle liefert DLL+Name, `argc` aus den
+  Win32-Signaturen), danach EP weiterlaufen lassen und die Importfolge protokollieren.
+
 

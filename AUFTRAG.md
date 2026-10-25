@@ -99,6 +99,17 @@ pcrecomp bietet zwei 32-Bit-Runtimes:
 
 Empfehlung für Juiced: `recomp32` + `native32`. Die Imports (KERNEL32, USER32, D3D9, DSOUND, DINPUT8, WS2_32, OLE32, BINKW32) gehen ans echte Windows – keine DLL-Stubs nötig.
 
+> **Korrektur (E15):** `native32` ist unter MinGW **nicht baubar** (MSVC-x86-only, `#error` in
+> `native32.c`); `win32hle` zielt auf SDL2/POSIX. Umgesetzt ist daher **`recomp32` + der generische
+> PE-Loader `image_loader.c`**: `poc\runtime_main.c` mappt das echte Image (Rebase über
+> `g_mem_base`), richtet einen Stack ein und führt geliftete Funktionen aus. Host-Exe hoch gelinkt
+> (`-Wl,--image-base,0x10000000`). Aufruf: `scripts\run_image.cmd`. Ergebnis: Blätter mit absoluten
+> Global-Zugriffen laufen korrekt; der EP 0x005CD316 läuft durch den SEH-Prolog (simulierte TIB via
+> `g_fs_base`) und erreicht die ersten echten Importe `kernel32!GetVersionExA` /
+> `kernel32!GetModuleHandleA`. Die IAT ist **bound-imported** (absolute XP-Adressen statt
+> RVAs/Namen) — die Import-Bridge ist die nächste Stufe. Details: `docs/reproduktion.md` §3.6,
+> `docs/entscheidungen.md` E15; Import-Namen löst `scripts/iat_names.py` auf.
+
 ### Schritt 3.2 — Build (Rohling) — korrigiert
 
 > **Korrektur:** pcrecomp liefert **kein** `--generate-build-tree` (und `lift/generate.py`

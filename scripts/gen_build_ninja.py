@@ -61,6 +61,9 @@ def main():
     lines.append("rule link\n")
     lines.append("  command = $gcc $in -Wl,--gc-sections -o $out\n")
     lines.append("  description = LINK $out\n")
+    lines.append("rule linkrun\n")
+    lines.append("  command = $gcc $in -Wl,--gc-sections -Wl,--image-base,0x10000000 -o $out\n")
+    lines.append("  description = LINKRUN $out\n")
     lines.append("rule stubs\n")
     lines.append("  command = python scripts/gen_link_stubs.py build/full $out "
                  "C:/msys64/mingw32/bin/nm.exe logs/link_stubs.txt\n")
@@ -72,13 +75,20 @@ def main():
         lines.append(f"build {o}: cc {GEN_DIR}/{tu} | {INC_H} {INC_TYPES}\n")
 
     lines.append(f"build build/full/poc_main.o: cc poc/main.c | {INC_TYPES}\n")
-    stub_inputs = " ".join(["build/full/poc_main.o"] + objs)
+    lines.append(f"build build/full/runtime_main.o: cc poc/runtime_main.c | {INC_TYPES} pcrecomp/runtime/recomp32/image_loader.h\n")
+    lines.append("build build/full/image_loader.o: cc pcrecomp/runtime/recomp32/image_loader.c | pcrecomp/runtime/recomp32/image_loader.h\n")
+    lines.append(f"build build/full/recomp_dispatch.o: cc {GEN_DIR}/recomp_dispatch.c | {INC_H} {INC_TYPES}\n")
+    stub_inputs = " ".join(["build/full/poc_main.o", "build/full/recomp_dispatch.o"] + objs)
     lines.append(f"\nbuild build/full/link_stubs.c: stubs {stub_inputs}\n")
     lines.append("build build/full/link_stubs.o: cc build/full/link_stubs.c\n")
 
     link_inputs = " ".join(["build/full/poc_main.o", "build/full/link_stubs.o"] + objs)
     lines.append(f"\nbuild build/juiced_full.exe: link {link_inputs}\n")
-    lines.append("\ndefault build/juiced_full.exe\n")
+    run_inputs = " ".join(["build/full/runtime_main.o", "build/full/image_loader.o",
+                           "build/full/recomp_dispatch.o",
+                           "build/full/link_stubs.o"] + objs)
+    lines.append(f"build build/juiced_run.exe: linkrun {run_inputs}\n")
+    lines.append("\ndefault build/juiced_full.exe build/juiced_run.exe\n")
 
     out_path = os.path.join(ROOT, "build", "build.ninja")
     with open(out_path, "w", encoding="utf-8", newline="\n") as f:

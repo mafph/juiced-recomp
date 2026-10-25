@@ -191,3 +191,40 @@ Kurzformat: **Kontext → Entscheidung → Begründung → Alternativen.**
 - **Grenzen / offen:** Absolute Speicheroperanden brauchen Image-Mapping an Original-VAs;
   eingebettete `ret` (früher Rücksprung) werden derzeit abgelehnt. Beides ist die nächste
   Ausbaustufe (echtes Speicher-Layout + Runtime-`main`).
+
+## E15 — Runtime lädt das echte Image, Host wird hoch gelinkt (Phase 3.1)
+
+- **Kontext:** Phase 3.1 soll gelifteten Code gegen den **echten Programmstart-Speicher**
+  ausführen. `native32` (Auftrags-Empfehlung) ist unter MinGW nicht baubar (MSVC-x86-only,
+  `#error` in `native32.c`), `win32hle` zielt auf SDL2/POSIX. Übrig bleibt `recomp32` + der
+  mitgelieferte generische PE-Loader `image_loader.c`.
+- **Entscheidung:** Ein eigener `poc\runtime_main.c` mappt `Juiced.exe` über
+  `recomp_load_image` ins Adressfenster des Prozesses, richtet einen Stack ein und ruft
+  geliftete Funktionen auf.
+- **Kerndetails:**
+  1. **Host-Base:** `build\juiced_run.exe` wird mit `-Wl,--image-base,0x10000000` gelinkt
+     (Ninja-Regel `linkrun`). Sonst würde MinGWs Default-Base `0x400000` mit der Ziel-VA
+     kollidieren.
+  2. **Rebase statt Fix-Base:** `0x00400000` kann durch DLL-ASLR belegt sein
+     (`VirtualAlloc` fixed schlägt fehl). Die Runtime probiert mehrere Basen und setzt
+     `g_mem_base = base - 0x400000`; der Lift rechnet jede Gast-VA über
+     `ADDR(va)=va+g_mem_base` — genau der Zweck des Feldes.
+  3. **Diagnose:** VEH-Handler protokolliert AV-Ziel, `g_cur_func`, Register und ICALL-Ringpuffer;
+     `recomp_lookup_import` liefert bewusst `NULL`, damit unaufgelöste Importe **geloggt**
+     statt blind gesprungen werden.
+  4. **Stack + TIB als Gast-VAs:** Auch `esp` und `fs:` laufen über `ADDR`, deshalb ist `g_esp`
+     `HOST2GUEST(stack_top)` und `g_fs_base` zeigt auf eine simulierte TIB
+     (`0x01030000`, `fs:[0]=0xFFFFFFFF`, StackBase/Limit, Self). Ohne das schreibt der SEH-Prolog
+     `fs:[0]` nach `ADDR(0)` (unmapped).
+  5. `recomp_dispatch.o` muss als eigene TU gelinkt werden (der Glob `recomp_[0-9]*.c` schließt
+     `recomp_dispatch.c` aus).
+  6. `scripts\iat_names.py` löst IAT-Slots/gebundene Adressen über die Import-Tabelle in
+     `DLL!Funktion` auf.
+- **Ergebnis:** Blattfunktionen mit absoluten Global-Zugriffen laufen korrekt gegen die echten
+  Image-Daten (`mov [0x76A090],eax`; `fld dword [0x7019A8]` → 1.38). Der EP 0x005CD316 läuft durch
+  den SEH-Prolog und erreicht die ersten echten Importe: `kernel32!GetVersionExA` (Slot
+  `0x6CC1EC`, gebunden `0x7C812B6E`) und `kernel32!GetModuleHandleA` (Slot `0x6CC168`, gebunden
+  `0x7C80B731`). Danach folgt ein `ADDR(0)`-Zugriff, weil ein aufgelöster Import `NULL` liefert
+  und als Zeiger genutzt wird.
+- **Offen:** Import-Bridge (IAT-Slots auf Host-Funktionen/Stubs mit bekanntem stdcall-`argc`
+  umbiegen); danach EP weiterlaufen lassen und die Importfolge protokollieren.
