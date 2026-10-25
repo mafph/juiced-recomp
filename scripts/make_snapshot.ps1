@@ -143,4 +143,21 @@ Get-ChildItem -LiteralPath $OutDir | ForEach-Object {
         Info ("  {0,-32} {1,8:N2} MB" -f $_.Name, ($_.Length / 1MB))
     }
 }
-Info "Zip daraus erstellen oder den Ordner auf externen Datentraeger kopieren."
+
+# --- 7. ZIP (per tar/bsdtar, damit auch versteckte Verzeichnisse wie pcrecomp/.git mitkommen;
+#        Compress-Archive laesst versteckte Verzeichnisse weg!) ---
+$zip = "$OutDir.zip"
+$leaf = Split-Path $OutDir -Leaf
+$parent = Split-Path $OutDir -Parent
+if (Get-Command tar.exe -ErrorAction SilentlyContinue) {
+    if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
+    Push-Location $parent
+    try { & tar.exe -a -c -f $zip $leaf; $tarRc = $LASTEXITCODE } finally { Pop-Location }
+    if ($tarRc -eq 0 -and (Test-Path -LiteralPath $zip)) {
+        Info ("ZIP: {0} ({1:N1} MB)" -f $zip, ((Get-Item -LiteralPath $zip).Length / 1MB))
+    } else {
+        Write-Warning "tar-ZIP fehlgeschlagen - Ordner manuell auf externen Datentraeger kopieren."
+    }
+} else {
+    Write-Warning "tar.exe nicht gefunden - Ordner manuell kopieren (Compress-Archive laesst .git weg)."
+}

@@ -55,7 +55,8 @@ Aktuellster Commit: `dad29b8` (Phase 3.1).
 powershell -ExecutionPolicy Bypass -File scripts\make_snapshot.ps1
 ```
 
-Ergebnis: `..\juicedDecomp_snapshot_<YYYYMMDD>\` neben dem Projektordner mit
+Ergebnis: `..\juicedDecomp_snapshot_<YYYYMMDD>\` **und** `..\juicedDecomp_snapshot_<YYYYMMDD>.zip`
+neben dem Projektordner. Inhalt:
 
 - `juicedDecomp-history.bundle` — **komplette Git-Historie** (kein Remote vorhanden!)
 - `source.zip` — alle getrackten Dateien des aktuellen Commits
@@ -64,9 +65,12 @@ Ergebnis: `..\juicedDecomp_snapshot_<YYYYMMDD>\` neben dem Projektordner mit
 - `MANIFEST.txt` — Größen + SHA256 aller Bestandteile, Tool-/Paketversionen
 - `RESTORE.md` — Kurzanleitung (Kopie der relevanten Abschnitte dieser Datei)
 
-Danach den Ordner `juicedDecomp_snapshot_<YYYYMMDD>` auf einen externen Datenträger kopieren.
-Der komplette Projektordner (~3,7 GB) kann alternativ 1:1 mitgenommen werden; dann entfällt
-der Wiederaufbau von `build/`, `juiced_lifted/`, `tools/`, `ghidra_proj/`, `.venv/`.
+> Das ZIP wird mit `tar`/bsdtar erzeugt. `Compress-Archive` **nicht** verwenden: es lässt
+> versteckte Verzeichnisse wie `pcrecomp/.git` weg.
+
+Danach `juicedDecomp_snapshot_<YYYYMMDD>.zip` (ca. 10–11 MB) auf einen externen Datenträger
+kopieren. Der komplette Projektordner (~3,7 GB) kann alternativ 1:1 mitgenommen werden; dann
+entfällt der Wiederaufbau von `build/`, `juiced_lifted/`, `tools/`, `ghidra_proj/`, `.venv/`.
 
 ## 4. Wiederherstellung auf dem neuen PC
 
