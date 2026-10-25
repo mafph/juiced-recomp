@@ -86,7 +86,7 @@ $lines.Add("== Wiederherstellung ==")
 $lines.Add("1) git clone juicedDecomp-history.bundle juicedDecomp")
 $lines.Add("2) data/* an die gleichen Pfade im Repo kopieren")
 $lines.Add("3) Toolchain/Python siehe RESTORE.md (HANDOVER.md)")
-$lines.Add("4) scripts\\reproduce.cmd  bzw.  scripts\\build_full.cmd")
+$lines.Add("4) scripts\reproduce.cmd  bzw.  scripts\build_full.cmd")
 $lines.Add("")
 $lines.Add("== Toolchain / Pakete ==")
 try { $lines.Add("gcc:   " + ((& 'C:\msys64\mingw32\bin\gcc.exe' --version 2>$null) | Select-Object -First 1)) } catch { $lines.Add("gcc:   <nicht gefunden>") }
